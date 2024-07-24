@@ -8,15 +8,40 @@ nnfs.init()
 X,y = spiral_data(samples = 100, classes = 3)
 
 class Layer_Dense:
-    def __init__(self,n_inputs,n_neurons):
+    def __init__(self,n_inputs,n_neurons, weight_regularizer_l1=0, weight_regularizer_l2=0, bias_regularizer_l1=0, bias_regularizer_l2=0):
         self.weights = 0.10 * np.random.randn(n_inputs,n_neurons)
         self.biases = np.zeros((1,n_neurons))
+        #set regularization strength
+        self.weight_regularizer_l1 =  weight_regularizer_l1
+        self.weight_regularizer_l2 = weight_regularizer_l2
+        self.bias_regularizer_l1 = bias_regularizer_l1
+        self.bias_regularizer_l2 = bias_regularizer_l2
+
     def forward(self,inputs):
         self.output = np.dot(inputs, self.weights) + self.biases
         self.inputs = inputs
     def backward(self,dvalues):
         self.dweights = np.dot(self.inputs.T,dvalues)
         self.dbiases = np.sum(dvalues, axis = 0, keepdims = True)
+   
+        # Gradients on regularization
+        # L1 on weights
+        if self.weight_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.weights)
+            dL1[self.weights < 0] = -1
+            self.dweights += self.weight_regularizer_l1 * dL1
+        # L2 on weights
+        if self.weight_regularizer_l2 > 0:
+            self.dweights += 2 * self.weight_regularizer_l2 * self.weights
+        # L1 on biases
+        if self.bias_regularizer_l1 > 0:
+            dL1 = np.ones_like(self.biases)
+            dL1[self.biases < 0] = -1
+            self.dbiases += self.bias_regularizer_l1 * dL1
+        # L2 on biases
+        if self.bias_regularizer_l2 > 0:
+            self.dbiases += 2 * self.bias_regularizer_l2 * self.biases
+
         self.dinputs = np.dot(dvalues, self.weights.T)
 
 class Activation_ReLU:
@@ -173,6 +198,18 @@ class Optimizer_Adam:
 
 
 class Loss:
+    def regularization_loss(self,layer):
+        regularization_loss = 0
+        if layer.weight_regularizer_l1 >0:
+            regularization_loss += layer.weight_regularizer_l1 * np.sum(np.abs(layer.weights))
+        if layer.weight_regularizer_l2 >0:
+            regularization_loss += layer.weight_regularizer_l2 * np.sum(layer.weights * layer.weights)
+        if layer.bias_regularizer_l1 >0:
+            regularization_loss += layer.bias_regularizer_l1 * np.sum(np.abs(layer.biases))
+        if layer.bias_regularizer_l2 >0:
+            regularization_loss += layer.bias_regularizer_l2 * np.sum(layer.biases * layer.biases)
+        return regularization_loss
+    
     def calculate(self,output,y):
         sample_losses = self.forward(output,y)
         data_loss = np.mean(sample_losses)
@@ -253,7 +290,10 @@ for epoch in range(10001):
 
     #Perform a forward pass of the combined activation function and loss function
     #takes the output of second dense layer here and the true labels
-    loss = loss_activation.forward(dense2.output,y)
+    data_loss = loss_activation.forward(dense2.output,y)
+
+    regularization_loss = loss_activation.loss.regularization_loss(dense1)  + loss_activation.loss.regularization_loss(dense2)
+    loss = data_loss + regularization_loss
 
     #loss_activation.output is the output from the softmax activation function  
     predictions = np.argmax(loss_activation.output, axis = 1)
@@ -276,6 +316,21 @@ for epoch in range(10001):
     optimizer.update_params(dense1)
     optimizer.update_params(dense2)
     optimizer.post_update_params()
+
+    #Validated the model
+    X_test, y_test = spiral_data(samples = 100, classes = 3)
+    dense1.forward(X_test)
+    activation1.forward(dense1.output)
+    dense2.forward(activation1.output)
+    loss = loss_activation.forward(dense2.output,y_test)
+
+    predictions = np.argmax(loss_activation.output, axis = 1)
+    if len(y_test.shape) == 2:
+        y_test = np.argmax(y_test, axis = 1)
+    accuracy = np.mean(predictions == y_test)
+
+    print(f'Validation, acc: {accuracy:.3f}, loss: {loss:.3f}')
+    
 
 
 
